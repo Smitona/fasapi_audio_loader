@@ -1,4 +1,6 @@
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import ForeignKey
+from typing import List
 from app.db import Base
 
 
@@ -10,7 +12,7 @@ class User(Base):
     password: Mapped[str]
     is_superuser: Mapped[bool] = mapped_column(default=False)
 
-    audios: Mapped['Audio'] = relationship(back_populates='owner')
+    audios: Mapped[List['Audio']] = relationship(back_populates='owner')
 
 
 class Audio(Base):
@@ -19,4 +21,7 @@ class Audio(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     name: Mapped[str]
     path: Mapped[str]
+    owner_id: Mapped[int] = mapped_column(
+        ForeignKey('users.id', ondelete='CASCADE')
+    )
     owner: Mapped['User'] = relationship(back_populates='audios')

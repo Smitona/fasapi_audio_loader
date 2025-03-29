@@ -1,109 +1,102 @@
 import os
 import secrets
 
-from fastapi import APIRouter, Depends, status, HTTPException, Request
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi import APIRouter, Depends, status, HTTPException, Cookie
+from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 from authx import AuthX, AuthXConfig
-from authx_extra.oauth2 import MiddlewareOauth2
 from sqlalchemy import select
 
-from fasapi_audio_loader.app.models import User
-from app.main import app
+from app.models import User
 from app.db import create_session, user_exists
 from app.utils import get_hashed_password, verify_password
+from app.schemas import UserResponse, UserCreate, RefreshData
 
-session = create_session()
-
-router = APIRouter(prefix='/auth', tags=['Авторизация'])
+auth_route = APIRouter(prefix='/auth', tags=['Авторизация'])
 
 config = AuthXConfig(
     JWT_ALGORITHM=os.getenv('JWT_ALGORITHM', default='HS256'),
     JWT_SECRET_KEY=os.getenv(
-        'JWT_SECRET_KEY', default=secrets.token_urlsafe(50),
+        'JWT_SECRET_KEY', default='secret_key',
     ),
-    JWT_TOKEN_LOCATION=['cookies']
-
+    JWT_TOKEN_LOCATION=['cookies'],
+    JWT_COOKIE_CSRF_PROTECT=False
 )
 
 auth = AuthX(config=config)
 
-app.add_middleware(
-    MiddlewareOauth2,
-    providers={
-        'yandex': {
-            'keys': 
-        }
-    }
-)
 
+@auth_route.post('/register', response_model=UserResponse)
+async def register(
+    data: UserCreate, session: AsyncSession = Depends(create_session)
+):
 
-@router.post('/register')
-async def register(data: User):
-
-    if await user_exists(data['email']):
+    if await user_exists(User, data.email):
         return HTTPException(400, detail='User already exists')
 
     user = User(
-        email=data['email'],
-        password=get_hashed_password(data['password'])
+        email=data.email,
+        password=get_hashed_password(data.password)
     )
 
     session.add(user)
-    session.commit
+    await session.commit()
+    await session.refresh(user)
 
     return user
 
 
-@router.post('/login')
-async def login(data: OAuth2PasswordRequestForm):
-    email = data['email']
+@auth_route.post('/login')
+async def login(
+    data: UserCreate, session: AsyncSession = Depends(create_session)
+):
+    email = data.email
 
-    user_email = (
-        select(User.email)
-        .where(User.email == email)
-        .scalar_subquery()
-    )
+    user_query = select(User).where(User.email == email)
+    result = await session.execute(user_query)
+    user = result.scalars().first()
 
-    password_inDB = (
-            select(User.password)
-            .where(User.email == email)
-            .scalar_subquery()
-        )
+    if not user:
+        raise HTTPException(404, detail={'message': 'User does not exist'})
 
-    if await user_exists():
-        user_id = await session.execute(user_email)
-
-        if data['email'] == user_email and verify_password(data['password'], password_inDB):
-
-            user_id = await session.execute(user_email)
-            token = auth.create_access_token(id=user_id)
-            return {'access_token': token}
-
+    if not verify_password(data.password, user.password):
         raise HTTPException(401, detail={'message': 'Invalid password'})
 
-    raise HTTPException(404, detail={'message': 'User does not exist'})
+    token = auth.create_access_token(uid=user.email)
+    response = JSONResponse(content={'access_token': token})
+    response.set_cookie(
+        key="access_token_cookie",
+        value=token,
+        httponly=True
+    )
+    return response
 
 
-@router.post(
-    '/refresh', dependencies=[Depends(auth.access_token_required)],
+@auth_route.post(
+    '/refresh',
     status_code=status.HTTP_201_CREATED
 )
-async def refresh_token(request: Request, refresh_data):
+async def refresh_token(
+    refresh_token_cookie: str = Cookie(None), refresh_data: RefreshData = None
+):
     try:
-        try:
-            refresh_payload = await auth.refresh_token_required(request)
-        except Exception as header_error:
-            if not refresh_data or not refresh_data.refresh_token:
-                raise header_error
-
-            token = refresh_data.refresh_token
-            refresh_payload = auth.verify_token(
-                token,
-                verify_type=True,
-                type="refresh"
+        token = refresh_token_cookie or (refresh_data and refresh_data.refresh_token)
+        if not token:
+            raise HTTPException(
+                status_code=401, detail='Missing refresh token'
             )
+
+        refresh_payload = auth.verify_token(token, verify_type=True)
+
         access_token = auth.create_access_token(refresh_payload.sub)
-        return {"access_token": access_token}
+        response = JSONResponse(content={'access_token': access_token})
+        response.set_cookie(
+            key="access_token_cookie",
+            value=token,
+            httponly=True
+        )
+        return response
 
     except Exception as e:
+        print(f"Error in refresh_token: {str(e)}")
         raise HTTPException(status_code=401, detail=str(e))

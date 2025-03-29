@@ -1,14 +1,16 @@
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import select, exists
+from sqlalchemy import exists
 
-from fasapi_audio_loader.app.models import User
+engine = create_async_engine('sqlite+aiosqlite:///database.db', echo=True)
 
-Base = DeclarativeBase()
+new_session = async_sessionmaker(
+    engine, class_=AsyncSession, expire_on_commit=False
+)
 
-engine = create_async_engine('sqlite+aiosqlite://database.db')
 
-new_session = async_sessionmaker(engine, expire_on_commit=False, echo=True)
+class Base(DeclarativeBase):
+    pass
 
 
 async def create_session():
@@ -16,15 +18,14 @@ async def create_session():
         yield session
 
 
-async def user_exists(email: str):
-    session = create_session()
+async def create_tables():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
-    user_email = (
-        select(User.email)
-        .where(User.email == email)
-        .scalar_subquery()
-    )
 
-    return session.query(
-        exists().where(User.email == user_email)
-    ).scalar()
+async def user_exists(User, email: str):
+    async with new_session() as session:
+        result = await session.execute(
+            exists().where(User.email == email)
+        )
+        return result.scalar()
