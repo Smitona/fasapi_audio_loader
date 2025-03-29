@@ -10,6 +10,11 @@ package-mode = false
 python = "^3.12"
 fastapi = "^0.115.12"
 sqlalchemy = "^2.0.40"
+authx = "^1.4.2"
+passlib = {extras = ["bcrypt"], version = "^1.7.4"}
+python-jose = {extras = ["cryptography"], version = "^3.4.0"}
+python-multipart = "^0.0.20"
+uvicorn = "^0.34.0"
 
 
 [build-system]
