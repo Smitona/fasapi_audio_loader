@@ -9,11 +9,19 @@ class UserCreate(BaseModel):
 class UserResponse(BaseModel):
     id: int
     email: EmailStr
-    password: str
 
     class Config:
         rom_attributes = True
 
 
-class RefreshData(BaseModel):
+class TokenData(BaseModel):
     refresh_token: str
+
+
+class AudioResponse(BaseModel):
+    name: str
+    path: str
+
+
+class FilePathRequest(BaseModel):
+    file_path: str

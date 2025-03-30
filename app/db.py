@@ -1,16 +1,15 @@
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import exists
+from sqlalchemy.ext.asyncio import (
+    create_async_engine, async_sessionmaker, AsyncSession
+)
+from sqlalchemy import exists, select
+
+from app.models import Base
 
 engine = create_async_engine('sqlite+aiosqlite:///database.db', echo=True)
 
 new_session = async_sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False
 )
-
-
-class Base(DeclarativeBase):
-    pass
 
 
 async def create_session():
@@ -29,3 +28,16 @@ async def user_exists(User, email: str):
             exists().where(User.email == email)
         )
         return result.scalar()
+
+
+async def get_user(User, param, session):
+    if isinstance(param, int):
+        user_query = select(User).where(User.id == param)
+        result = await session.execute(user_query)
+        user = result.scalars().first()
+    else:
+        user_query = select(User).where(User.email == param)
+        result = await session.execute(user_query)
+        user = result.scalars().first()
+
+    return user

@@ -1,29 +1,14 @@
-import os
-import secrets
-
-from fastapi import APIRouter, Depends, status, HTTPException, Cookie
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from authx import AuthX, AuthXConfig
-from sqlalchemy import select
 
 from app.models import User
-from app.db import create_session, user_exists
+from app.db import create_session, user_exists, get_user
+from app.config import auth
 from app.utils import get_hashed_password, verify_password
-from app.schemas import UserResponse, UserCreate, RefreshData
+from app.schemas import UserResponse, UserCreate, TokenData
 
 auth_route = APIRouter(prefix='/auth', tags=['Авторизация'])
-
-config = AuthXConfig(
-    JWT_ALGORITHM=os.getenv('JWT_ALGORITHM', default='HS256'),
-    JWT_SECRET_KEY=os.getenv(
-        'JWT_SECRET_KEY', default='secret_key',
-    ),
-    JWT_TOKEN_LOCATION=['cookies'],
-    JWT_COOKIE_CSRF_PROTECT=False
-)
-
-auth = AuthX(config=config)
 
 
 @auth_route.post('/register', response_model=UserResponse)
@@ -31,8 +16,8 @@ async def register(
     data: UserCreate, session: AsyncSession = Depends(create_session)
 ):
 
-    if await user_exists(User, data.email):
-        return HTTPException(400, detail='User already exists')
+    if await get_user(User, data.email, session):
+        raise HTTPException(400, detail='User already exists')
 
     user = User(
         email=data.email,
@@ -46,15 +31,13 @@ async def register(
     return user
 
 
-@auth_route.post('/login')
+@auth_route.post('/login', response_model=TokenData)
 async def login(
     data: UserCreate, session: AsyncSession = Depends(create_session)
 ):
     email = data.email
 
-    user_query = select(User).where(User.email == email)
-    result = await session.execute(user_query)
-    user = result.scalars().first()
+    user = await get_user(User, email, session)
 
     if not user:
         raise HTTPException(404, detail={'message': 'User does not exist'})
@@ -72,7 +55,7 @@ async def login(
     return response
 
 
-@auth_route.post(
+""" @auth_route.post(
     '/refresh',
     status_code=status.HTTP_201_CREATED
 )
@@ -99,4 +82,4 @@ async def refresh_token(
 
     except Exception as e:
         print(f"Error in refresh_token: {str(e)}")
-        raise HTTPException(status_code=401, detail=str(e))
+        raise HTTPException(status_code=401, detail=str(e)) """

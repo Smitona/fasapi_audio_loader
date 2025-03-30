@@ -1,7 +1,10 @@
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, DeclarativeBase
 from sqlalchemy import ForeignKey
 from typing import List
-from app.db import Base
+
+
+class Base(DeclarativeBase):
+    pass
 
 
 class User(Base):
@@ -25,3 +28,4 @@ class Audio(Base):
         ForeignKey('users.id', ondelete='CASCADE')
     )
     owner: Mapped['User'] = relationship(back_populates='audios')
+
