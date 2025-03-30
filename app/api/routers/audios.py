@@ -1,4 +1,5 @@
 import os
+import uuid
 from fastapi import APIRouter, status, Depends, UploadFile, File, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,7 +39,7 @@ async def list_users(
     status_code=status.HTTP_201_CREATED
 )
 async def add_audio(
-    name: str, file_path: str,
+    name: str,
     file: UploadFile = Depends(validate_mp3),
     session: AsyncSession = Depends(auth.access_token_required),
     token_data: dict = Depends(auth.access_token_required)
@@ -46,9 +47,18 @@ async def add_audio(
     user_id = token_data.sub
     current_user = await get_user(User, user_id, session)
 
+    user_dir = f'audio_storage/{user_id}'
+    os.makedirs(user_dir, exist_ok=True)
+
+    unique_filename = f"{uuid.uuid4()}.mp3"
+    file_path = f"{user_dir}/{unique_filename}"
+
+    content = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(content)
+
     audio = Audio(
         name=name,
-        path=file_path,
         owner_id=user_id,
         owner=current_user
     )
